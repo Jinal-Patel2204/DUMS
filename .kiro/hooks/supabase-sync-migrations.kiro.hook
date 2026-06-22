@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Sync Supabase Migrations",
+  "description": "After applying database migrations via MCP, reminds to sync migrations locally and regenerate types.",
+  "version": "1",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [
+      ".*apply_migration.*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A database migration was just applied. Remember to: 1) Run 'npx supabase migration fetch --yes' to sync migrations locally, 2) Run 'npx supabase gen types --linked > src/types/supabase.ts' to regenerate types."
+  }
+}
