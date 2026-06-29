@@ -29,7 +29,6 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import { reminderRuleSchema, type ReminderRuleInput } from '@/lib/validations/settings';
@@ -87,9 +86,8 @@ export default function ReminderRulesPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} href="/store/settings">Back</Button>
-        <Typography variant="h5" sx={{ flex: 1 }}>Reminder Rules</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h5">Reminder Rules</Typography>
         <Button variant="contained" startIcon={<AddOutlined />} onClick={() => setDialogOpen(true)}>Add Rule</Button>
       </Box>
 

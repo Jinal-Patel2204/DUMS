@@ -290,11 +290,17 @@ export default function ReportsPage() {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 3 }}>Reports</Typography>
+      {/* Page Header */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>Reports</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+          Generate and export business intelligence reports
+        </Typography>
+      </Box>
 
       {/* Report Type Tabs */}
-      <Card sx={{ mb: 3 }}>
-        <Tabs value={reportType} onChange={(_, v) => { setReportType(v); setGenerated(false); }} variant="scrollable" scrollButtons="auto">
+      <Card sx={{ mb: 2.5 }}>
+        <Tabs value={reportType} onChange={(_, v) => { setReportType(v); setGenerated(false); }} variant="scrollable" scrollButtons="auto" sx={{ px: 1 }}>
           <Tab label="Outstanding" value="outstanding" />
           <Tab label="Ledger" value="ledger" />
           <Tab label="Payment" value="payment" />
@@ -307,9 +313,9 @@ export default function ReportsPage() {
       </Card>
 
       {/* Filters */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Grid container spacing={2} alignItems="center">
+      <Card sx={{ mb: 2.5 }}>
+        <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+          <Grid container spacing={2} sx={{ alignItems: 'center' }}>
             {reportType !== 'outstanding' && reportType !== 'inventory' && reportType !== 'overdue' && (
               <>
                 <Grid size={{ xs: 12, sm: 3 }}>
@@ -354,12 +360,12 @@ export default function ReportsPage() {
             )}
             <Grid size={{ xs: 12, sm: 3 }}>
               <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button variant="contained" onClick={generateReport} disabled={loading}>
-                  {loading ? 'Loading...' : 'Generate'}
+                <Button variant="contained" size="small" onClick={generateReport} disabled={loading}>
+                  {loading ? 'Generating...' : 'Generate Report'}
                 </Button>
                 {reportData.length > 0 && (
-                  <Button variant="outlined" startIcon={<DownloadOutlined />} onClick={exportCSV}>
-                    CSV
+                  <Button variant="outlined" size="small" startIcon={<DownloadOutlined />} onClick={exportCSV} sx={{ borderColor: 'divider', color: 'text.secondary' }}>
+                    Export CSV
                   </Button>
                 )}
               </Box>

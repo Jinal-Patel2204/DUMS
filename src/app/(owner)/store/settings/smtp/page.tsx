@@ -16,7 +16,6 @@ import Select from '@mui/material/Select';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Divider from '@mui/material/Divider';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import SendOutlined from '@mui/icons-material/SendOutlined';
 import { smtpConfigSchema, type SmtpConfigInput } from '@/lib/validations/settings';
 import { createClient } from '@/lib/supabase/client';
@@ -103,10 +102,7 @@ export default function SmtpConfigPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} href="/store/settings">Back</Button>
-        <Typography variant="h5">SMTP / Email Configuration</Typography>
-      </Box>
+      <Typography variant="h5" sx={{ mb: 3 }}>SMTP / Email Configuration</Typography>
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 7 }}>

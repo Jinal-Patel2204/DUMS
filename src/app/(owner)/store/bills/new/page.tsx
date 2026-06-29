@@ -22,7 +22,6 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Divider from '@mui/material/Divider';
 import Chip from '@mui/material/Chip';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import { createBillSchema, type CreateBillInput } from '@/lib/validations/bill';
 import { createClient } from '@/lib/supabase/client';
@@ -146,10 +145,7 @@ export default function CreateBillPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()}>Back</Button>
-        <Typography variant="h5">Create Bill</Typography>
-      </Box>
+      <Typography variant="h5" sx={{ mb: 3 }}>Create Bill</Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 

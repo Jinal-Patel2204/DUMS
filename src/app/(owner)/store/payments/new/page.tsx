@@ -17,7 +17,6 @@ import Select from '@mui/material/Select';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import InputAdornment from '@mui/material/InputAdornment';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import { recordPaymentSchema, type RecordPaymentInput } from '@/lib/validations/payment';
 import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
@@ -76,10 +75,7 @@ export default function RecordPaymentPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()}>Back</Button>
-        <Typography variant="h5">Record Payment</Typography>
-      </Box>
+      <Typography variant="h5" sx={{ mb: 3 }}>Record Payment</Typography>
 
       <Card sx={{ maxWidth: 600 }}>
         <CardContent sx={{ p: 3 }}>

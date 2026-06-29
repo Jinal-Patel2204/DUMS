@@ -69,7 +69,7 @@ export default function CustomerNotificationsPage() {
 
       <Card>
         {notifications.length === 0 ? (
-          <CardContent><Typography color="text.secondary" textAlign="center">No notifications yet.</Typography></CardContent>
+          <CardContent><Typography color="text.secondary" sx={{ textAlign: 'center' }}>No notifications yet.</Typography></CardContent>
         ) : (
           <List disablePadding>
             {notifications.map((n, idx) => (

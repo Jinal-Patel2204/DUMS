@@ -18,7 +18,6 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import Divider from '@mui/material/Divider';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import { productSchema, type ProductInput } from '@/lib/validations/product';
 import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
@@ -120,10 +119,7 @@ export default function NewProductPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()}>Back</Button>
-        <Typography variant="h5">Add Product</Typography>
-      </Box>
+      <Typography variant="h5" sx={{ mb: 3 }}>Add Product</Typography>
 
       <Card sx={{ maxWidth: 700 }}>
         <CardContent sx={{ p: 3 }}>

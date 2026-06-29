@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -10,9 +11,15 @@ import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import Grid from '@mui/material/Grid';
 import Alert from '@mui/material/Alert';
-import Divider from '@mui/material/Divider';
 import Skeleton from '@mui/material/Skeleton';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
+import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
+import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined';
+import { changePasswordSchema, type ChangePasswordInput } from '@/lib/validations/auth';
 import { createClient } from '@/lib/supabase/client';
+import { useToast } from '@/components/providers/ToastProvider';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 
 interface ProfileForm {
   full_name: string;
@@ -20,24 +27,20 @@ interface ProfileForm {
   email: string;
 }
 
-interface PasswordForm {
-  currentPassword: string;
-  newPassword: string;
-  confirmPassword: string;
-}
-
 export default function CustomerProfilePage() {
+  const { showSuccess, showError } = useToast();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
-  const [pwSuccess, setPwSuccess] = useState('');
-  const [pwError, setPwError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  const { register, handleSubmit, reset } = useForm<ProfileForm>();
-  const { register: regPw, handleSubmit: handlePw, reset: resetPw, watch } = useForm<PasswordForm>();
+  const { register, handleSubmit, reset, formState: { isDirty } } = useForm<ProfileForm>();
+  const { register: regPw, handleSubmit: handlePw, reset: resetPw, formState: { errors: pwErrors } } = useForm<ChangePasswordInput>({
+    resolver: zodResolver(changePasswordSchema) as any,
+  });
+
+  useUnsavedChanges(isDirty);
 
   useEffect(() => {
     const fetch = async () => {
@@ -56,32 +59,62 @@ export default function CustomerProfilePage() {
   }, [reset]);
 
   const onProfileSubmit = async (data: ProfileForm) => {
-    setSaving(true); setError(''); setSuccess('');
+    setSaving(true);
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setError('Not authenticated'); setSaving(false); return; }
+    if (!user) { showError('Not authenticated'); setSaving(false); return; }
 
     const { error: updateErr } = await supabase.from('user_profiles').update({
       full_name: data.full_name,
       phone: data.phone,
     }).eq('id', user.id);
 
-    if (updateErr) { setError(updateErr.message); } else { setSuccess('Profile updated successfully'); }
+    if (updateErr) {
+      showError(updateErr.message);
+    } else {
+      showSuccess('Profile updated successfully');
+      reset(data); // Reset dirty state
+    }
     setSaving(false);
   };
 
-  const onPasswordSubmit = async (data: PasswordForm) => {
-    if (data.newPassword !== data.confirmPassword) { setPwError('Passwords do not match'); return; }
-    if (data.newPassword.length < 6) { setPwError('Password must be at least 6 characters'); return; }
-    setPwLoading(true); setPwError(''); setPwSuccess('');
+  const onPasswordSubmit = async (data: ChangePasswordInput) => {
+    setPwLoading(true);
     const supabase = createClient();
 
-    const { error } = await supabase.auth.updateUser({ password: data.newPassword });
-    if (error) { setPwError(error.message); } else { setPwSuccess('Password changed successfully'); resetPw(); }
+    // Verify current password by attempting sign-in
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email) { showError('Cannot verify identity'); setPwLoading(false); return; }
+
+    const { error: signInErr } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: data.current_password,
+    });
+
+    if (signInErr) {
+      showError('Current password is incorrect');
+      setPwLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: data.new_password });
+    if (error) {
+      showError(error.message);
+    } else {
+      showSuccess('Password changed successfully');
+      resetPw();
+    }
     setPwLoading(false);
   };
 
-  if (loading) return <Box><Typography variant="h5" sx={{ mb: 3 }}>Profile</Typography><Skeleton variant="rounded" height={300} /></Box>;
+  if (loading) {
+    return (
+      <Box>
+        <Typography variant="h5" sx={{ mb: 3 }}>Profile</Typography>
+        <Skeleton variant="rounded" height={300} sx={{ maxWidth: 600 }} />
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -90,8 +123,6 @@ export default function CustomerProfilePage() {
       <Card sx={{ maxWidth: 600, mb: 3 }}>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 2 }}>Personal Information</Typography>
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
           <Box component="form" onSubmit={handleSubmit(onProfileSubmit)} noValidate>
             <Grid container spacing={2}>
               <Grid size={{ xs: 12 }}>
@@ -104,7 +135,7 @@ export default function CustomerProfilePage() {
                 <TextField fullWidth label="Email" {...register('email')} disabled helperText="Email cannot be changed" />
               </Grid>
             </Grid>
-            <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={saving}>
+            <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={saving || !isDirty}>
               {saving ? 'Saving...' : 'Update Profile'}
             </Button>
           </Box>
@@ -114,15 +145,48 @@ export default function CustomerProfilePage() {
       <Card sx={{ maxWidth: 600 }}>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 2 }}>Change Password</Typography>
-          {pwError && <Alert severity="error" sx={{ mb: 2 }}>{pwError}</Alert>}
-          {pwSuccess && <Alert severity="success" sx={{ mb: 2 }}>{pwSuccess}</Alert>}
           <Box component="form" onSubmit={handlePw(onPasswordSubmit)} noValidate>
             <Grid container spacing={2}>
               <Grid size={{ xs: 12 }}>
-                <TextField fullWidth label="New Password" type="password" {...regPw('newPassword')} />
+                <TextField
+                  fullWidth
+                  label="Current Password"
+                  type={showPassword ? 'text' : 'password'}
+                  {...regPw('current_password')}
+                  error={!!pwErrors.current_password}
+                  helperText={pwErrors.current_password?.message}
+                  slotProps={{
+                    input: {
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" size="small">
+                            {showPassword ? <VisibilityOffOutlined fontSize="small" /> : <VisibilityOutlined fontSize="small" />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
               </Grid>
               <Grid size={{ xs: 12 }}>
-                <TextField fullWidth label="Confirm Password" type="password" {...regPw('confirmPassword')} />
+                <TextField
+                  fullWidth
+                  label="New Password"
+                  type="password"
+                  {...regPw('new_password')}
+                  error={!!pwErrors.new_password}
+                  helperText={pwErrors.new_password?.message || 'Min 8 chars, uppercase, lowercase, number, special char'}
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Confirm New Password"
+                  type="password"
+                  {...regPw('confirm_password')}
+                  error={!!pwErrors.confirm_password}
+                  helperText={pwErrors.confirm_password?.message}
+                />
               </Grid>
             </Grid>
             <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={pwLoading}>

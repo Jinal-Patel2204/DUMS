@@ -14,7 +14,6 @@ import Alert from '@mui/material/Alert';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Divider from '@mui/material/Divider';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import { notificationConfigSchema, type NotificationConfigInput } from '@/lib/validations/settings';
 import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
@@ -67,10 +66,7 @@ export default function NotificationConfigPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} href="/store/settings">Back</Button>
-        <Typography variant="h5">Notification Settings</Typography>
-      </Box>
+      <Typography variant="h5" sx={{ mb: 3 }}>Notification Settings</Typography>
       <Card sx={{ maxWidth: 500 }}>
         <CardContent sx={{ p: 3 }}>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}

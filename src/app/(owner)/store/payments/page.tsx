@@ -23,12 +23,18 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
+import Skeleton from '@mui/material/Skeleton';
+import Tooltip from '@mui/material/Tooltip';
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import AddOutlined from '@mui/icons-material/AddOutlined';
+import PaymentsOutlined from '@mui/icons-material/PaymentsOutlined';
+import FileDownloadOutlined from '@mui/icons-material/FileDownloadOutlined';
 import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
 import { debugLog } from '@/lib/debug-logger';
+import { format } from 'date-fns';
+import { exportToCSV, formatCurrencyExport, formatDateExport } from '@/lib/export';
 
 interface PaymentRow {
   id: string; customer_id: string; amount: number; method: string;
@@ -37,7 +43,12 @@ interface PaymentRow {
 }
 
 const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`;
-const statusColor: Record<string, any> = { pending: 'warning', verified: 'success', rejected: 'error', disputed: 'info' };
+const statusColor: Record<string, 'warning' | 'success' | 'error' | 'info' | 'default'> = { 
+  pending: 'warning', verified: 'success', rejected: 'error', disputed: 'info' 
+};
+const statusLabel: Record<string, string> = {
+  pending: 'Pending', verified: 'Verified', rejected: 'Rejected', disputed: 'Disputed',
+};
 
 export default function PaymentsPage() {
   const router = useRouter();
@@ -64,7 +75,6 @@ export default function PaymentsPage() {
 
       if (error) { debugLog('payments', 'fetch_error', error.message, 'error'); setLoading(false); return; }
 
-      // Get customer names
       const customerIds = [...new Set((payData ?? []).map(p => p.customer_id))];
       let customerMap: Record<string, string> = {};
       if (customerIds.length > 0) {
@@ -92,47 +102,108 @@ export default function PaymentsPage() {
     return result;
   }, [payments, tab, methodFilter, search]);
 
-  if (loading) return <Typography>Loading payments...</Typography>;
+  const pendingCount = useMemo(() => payments.filter(p => p.status === 'pending').length, [payments]);
+  const verifiedCount = useMemo(() => payments.filter(p => p.status === 'verified').length, [payments]);
+  const rejectedCount = useMemo(() => payments.filter(p => p.status === 'rejected').length, [payments]);
+
+  if (loading) {
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Skeleton variant="text" width={160} height={32} />
+          <Skeleton variant="rounded" width={150} height={36} />
+        </Box>
+        <Card>
+          <Box sx={{ p: 2 }}><Skeleton variant="rounded" width={300} height={36} /></Box>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} variant="rounded" height={48} sx={{ mx: 2, mb: 1 }} />
+          ))}
+        </Card>
+      </Box>
+    );
+  }
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5">Payments ({payments.length})</Typography>
-        <Button variant="contained" startIcon={<AddOutlined />} onClick={() => router.push('/store/payments/new')}>Record Payment</Button>
+      {/* Page Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>Payments</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            Track and verify customer payments
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Tooltip title="Export payments">
+            <Button variant="outlined" size="small" startIcon={<FileDownloadOutlined />} sx={{ borderColor: 'divider', color: 'text.secondary' }} onClick={() => {
+              exportToCSV(filtered, [
+                { key: 'customer_name', label: 'Customer' },
+                { key: 'amount', label: 'Amount', format: (v) => formatCurrencyExport(v) },
+                { key: 'method', label: 'Method' },
+                { key: 'reference_id', label: 'Reference' },
+                { key: 'status', label: 'Status' },
+                { key: 'created_at', label: 'Date', format: (v) => formatDateExport(v) },
+              ], `payments-${new Date().toISOString().split('T')[0]}`);
+            }}>
+              Export
+            </Button>
+          </Tooltip>
+          <Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => router.push('/store/payments/new')}>
+            Record Payment
+          </Button>
+        </Box>
       </Box>
 
       <Card>
-        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs value={tab} onChange={(_, v) => setTab(v)}>
+        {/* Tabs */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}>
+          <Tabs value={tab} onChange={(_, v) => { setTab(v); setPage(0); }}>
             <Tab label={`All (${payments.length})`} />
-            <Tab label={`Pending (${payments.filter(p => p.status === 'pending').length})`} />
-            <Tab label="Verified" />
-            <Tab label="Rejected" />
+            <Tab label={`Pending (${pendingCount})`} />
+            <Tab label={`Verified (${verifiedCount})`} />
+            <Tab label={`Rejected (${rejectedCount})`} />
           </Tabs>
         </Box>
 
-        <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <TextField size="small" placeholder="Search customer or ref..." value={search} onChange={(e) => setSearch(e.target.value)}
-            slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchOutlined fontSize="small" /></InputAdornment> } }}
-            sx={{ width: 250 }} />
+        {/* Filters */}
+        <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          <TextField
+            placeholder="Search customer or reference..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchOutlined sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment> } }}
+            sx={{ width: 280 }}
+          />
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>Method</InputLabel>
-            <Select value={methodFilter} onChange={(e) => setMethodFilter(e.target.value)} label="Method">
-              <MenuItem value="">All</MenuItem>
+            <Select value={methodFilter} onChange={(e) => { setMethodFilter(e.target.value); setPage(0); }} label="Method">
+              <MenuItem value="">All Methods</MenuItem>
               <MenuItem value="cash">Cash</MenuItem>
               <MenuItem value="upi">UPI</MenuItem>
               <MenuItem value="bank_transfer">Bank Transfer</MenuItem>
               <MenuItem value="cheque">Cheque</MenuItem>
             </Select>
           </FormControl>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+            {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+          </Typography>
         </Box>
 
+        {/* Table */}
         {filtered.length === 0 ? (
-          <Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">{payments.length === 0 ? 'No payments yet.' : 'No payments match filters.'}</Typography></Box>
+          <Box sx={{ py: 8, textAlign: 'center' }}>
+            <PaymentsOutlined sx={{ fontSize: 48, color: 'text.disabled', mb: 1.5 }} />
+            <Typography variant="subtitle1" color="text.secondary" sx={{ fontWeight: 500 }}>
+              {payments.length === 0 ? 'No payments yet' : 'No payments match your filters'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
+              {payments.length === 0 ? 'Record a payment to get started.' : 'Try adjusting your search or filter.'}
+            </Typography>
+          </Box>
         ) : (
           <>
             <TableContainer>
-              <Table size="small">
+              <Table>
                 <TableHead><TableRow>
                   <TableCell>Customer</TableCell>
                   <TableCell align="right">Amount</TableCell>
@@ -140,26 +211,54 @@ export default function PaymentsPage() {
                   <TableCell>Reference</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Date</TableCell>
-                  <TableCell align="center">Action</TableCell>
+                  <TableCell align="center" sx={{ width: 80 }}>Actions</TableCell>
                 </TableRow></TableHead>
                 <TableBody>
                   {filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((p) => (
-                    <TableRow key={p.id} hover>
-                      <TableCell><Typography variant="body2" sx={{ fontWeight: 500 }}>{p.customer_name}</Typography></TableCell>
-                      <TableCell align="right"><Typography variant="body2" sx={{ fontWeight: 600 }}>{fmt(p.amount)}</Typography></TableCell>
-                      <TableCell><Chip label={p.method.replace('_', ' ')} size="small" variant="outlined" /></TableCell>
-                      <TableCell>{p.reference_id || '—'}</TableCell>
-                      <TableCell><Chip label={p.status} size="small" color={statusColor[p.status] || 'default'} /></TableCell>
-                      <TableCell>{new Date(p.created_at).toLocaleDateString('en-IN')}</TableCell>
-                      <TableCell align="center">
-                        <IconButton size="small" onClick={() => router.push(`/store/payments/${p.id}`)}><VisibilityOutlined fontSize="small" /></IconButton>
+                    <TableRow key={p.id} hover sx={{ cursor: 'pointer' }} onClick={() => router.push(`/store/payments/${p.id}`)}>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{p.customer_name}</Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{fmt(p.amount)}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={p.method.replace('_', ' ')} size="small" variant="outlined" sx={{ textTransform: 'capitalize' }} />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                          {p.reference_id || '—'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={statusLabel[p.status] || p.status} size="small" color={statusColor[p.status] || 'default'} variant="filled" />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {format(new Date(p.created_at), 'dd MMM yyyy')}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                        <Tooltip title="View details">
+                          <IconButton size="small" onClick={() => router.push(`/store/payments/${p.id}`)}>
+                            <VisibilityOutlined sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </TableContainer>
-            <TablePagination component="div" count={filtered.length} page={page} onPageChange={(_, p) => setPage(p)} rowsPerPage={rowsPerPage} onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }} />
+            <TablePagination
+              component="div"
+              count={filtered.length}
+              page={page}
+              onPageChange={(_, p) => setPage(p)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
+              rowsPerPageOptions={[15, 25, 50]}
+            />
           </>
         )}
       </Card>

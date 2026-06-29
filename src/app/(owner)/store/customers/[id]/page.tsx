@@ -19,7 +19,6 @@ import Select from '@mui/material/Select';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import InputAdornment from '@mui/material/InputAdornment';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import { customerSchema, type CustomerInput, COUNTRY_CODES } from '@/lib/validations/customer';
 import { createClient } from '@/lib/supabase/client';
@@ -124,9 +123,8 @@ export default function CustomerDetailPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.push('/store/customers')}>Back</Button>
-        <Typography variant="h5" sx={{ flex: 1 }}>{customer.name}</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h5">{customer.name}</Typography>
         {!editing && (
           <Button startIcon={<EditOutlined />} variant="outlined" onClick={() => setEditing(true)}>
             Edit

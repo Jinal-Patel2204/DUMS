@@ -11,7 +11,6 @@ import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import Grid from '@mui/material/Grid';
 import Alert from '@mui/material/Alert';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import { shopInfoSchema, type ShopInfoInput } from '@/lib/validations/settings';
 import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
@@ -55,10 +54,7 @@ export default function ShopInfoPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} href="/store/settings">Back</Button>
-        <Typography variant="h5">Shop Information</Typography>
-      </Box>
+      <Typography variant="h5" sx={{ mb: 3 }}>Shop Information</Typography>
       <Card sx={{ maxWidth: 700 }}>
         <CardContent sx={{ p: 3 }}>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}

@@ -24,7 +24,6 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Divider from '@mui/material/Divider';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import { purchaseEntrySchema, type PurchaseEntryInput } from '@/lib/validations/product';
 import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
@@ -124,10 +123,7 @@ export default function PurchaseEntryPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()}>Back</Button>
-        <Typography variant="h5">Purchase Entry</Typography>
-      </Box>
+      <Typography variant="h5" sx={{ mb: 3 }}>Purchase Entry</Typography>
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 5 }}>

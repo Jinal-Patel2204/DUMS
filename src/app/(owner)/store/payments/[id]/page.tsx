@@ -10,13 +10,18 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Grid from '@mui/material/Grid';
 import Divider from '@mui/material/Divider';
-import Skeleton from '@mui/material/Skeleton';
 import Alert from '@mui/material/Alert';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
+import TextField from '@mui/material/TextField';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import CancelOutlined from '@mui/icons-material/CancelOutlined';
 import { createClient } from '@/lib/supabase/client';
-import { useAppSelector } from '@/store/hooks';
+import { useToast } from '@/components/providers/ToastProvider';
+import { useConfirm } from '@/components/feedback/ConfirmDialog';
+import { PageLoading } from '@/components/feedback/PageLoading';
 import { format } from 'date-fns';
 
 const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`;
@@ -28,11 +33,14 @@ const statusColor: Record<string, 'warning' | 'success' | 'error' | 'info' | 'de
 export default function PaymentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const currentStore = useAppSelector((s) => s.auth.currentStore);
+  const { showSuccess, showError } = useToast();
+  const { confirm } = useConfirm();
   const [payment, setPayment] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const fetchPayment = async () => {
     if (!id) return;
@@ -54,97 +62,72 @@ export default function PaymentDetailPage() {
   useEffect(() => { fetchPayment(); }, [id]);
 
   const handleVerify = async () => {
-    if (!payment || !currentStore?.id) return;
-    setActionLoading(true);
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    if (!payment) return;
 
-    // Update payment status
-    const { error: updateErr } = await supabase
-      .from('payments')
-      .update({ status: 'verified', verified_at: new Date().toISOString(), verified_by: user?.id })
-      .eq('id', payment.id);
-
-    if (updateErr) { setError(updateErr.message); setActionLoading(false); return; }
-
-    // Create ledger entry (debit = customer paid, balance decreases)
-    const customer = payment.customers;
-    const balanceBefore = Number(customer?.current_balance || 0);
-    const balanceAfter = balanceBefore - Number(payment.amount);
-
-    await supabase.from('ledger_entries').insert({
-      store_id: currentStore.id,
-      customer_id: payment.customer_id,
-      entry_type: 'debit',
-      reference_type: 'payment',
-      reference_id: payment.id,
-      description: `Payment via ${payment.method}`,
-      debit_amount: 0,
-      credit_amount: Number(payment.amount),
-      balance_before: balanceBefore,
-      balance_after: balanceAfter,
-      entry_date: new Date().toISOString().split('T')[0],
+    const confirmed = await confirm({
+      title: 'Verify Payment',
+      message: `Are you sure you want to verify this payment of ${formatCurrency(Number(payment.amount))} from ${payment.customers?.name || 'customer'}? This will update the customer's balance and cannot be undone.`,
+      confirmLabel: 'Verify Payment',
+      severity: 'warning',
     });
 
-    // Notify customer about approval
-    if (customer?.id) {
-      const { data: custData } = await supabase.from('customers').select('linked_user_id').eq('id', payment.customer_id).single();
-      if (custData?.linked_user_id) {
-        await supabase.from('notifications').insert({
-          user_id: custData.linked_user_id,
-          type: 'payment_received',
-          channel: 'in_app',
-          title: 'Payment Approved',
-          body: `Your payment of ₹${Number(payment.amount).toLocaleString('en-IN')} has been verified.`,
-          data: { amount: payment.amount },
-        });
-      }
-    }
+    if (!confirmed) return;
 
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/payments/${id}/verify`, { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error || 'Failed to verify payment');
+        setActionLoading(false);
+        return;
+      }
+
+      showSuccess(`Payment of ${formatCurrency(Number(payment.amount))} verified successfully`);
+      fetchPayment();
+    } catch {
+      showError('Network error. Please try again.');
+    }
     setActionLoading(false);
-    fetchPayment();
   };
 
   const handleReject = async () => {
-    if (!payment) return;
+    if (!rejectionReason || rejectionReason.length < 3) {
+      showError('Please provide a rejection reason (minimum 3 characters)');
+      return;
+    }
+
     setActionLoading(true);
-    const supabase = createClient();
-    const { error: updateErr } = await supabase
-      .from('payments')
-      .update({ status: 'rejected' })
-      .eq('id', payment.id);
-
-    if (updateErr) { setError(updateErr.message); setActionLoading(false); return; }
-
-    // Notify customer about rejection
-    const { data: custData } = await supabase.from('customers').select('linked_user_id').eq('id', payment.customer_id).single();
-    if (custData?.linked_user_id) {
-      await supabase.from('notifications').insert({
-        user_id: custData.linked_user_id,
-        type: 'payment_received',
-        channel: 'in_app',
-        title: 'Payment Rejected',
-        body: `Your payment of ₹${Number(payment.amount).toLocaleString('en-IN')} was rejected.`,
-        data: { amount: payment.amount },
+    try {
+      const res = await fetch(`/api/payments/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rejection_reason: rejectionReason }),
       });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error || 'Failed to reject payment');
+        setActionLoading(false);
+        return;
+      }
+
+      showSuccess('Payment rejected');
+      setRejectDialogOpen(false);
+      setRejectionReason('');
+      fetchPayment();
+    } catch {
+      showError('Network error. Please try again.');
     }
     setActionLoading(false);
-    fetchPayment();
   };
 
-  if (loading) {
-    return (
-      <Box>
-        <Skeleton variant="rounded" height={40} sx={{ mb: 2, width: 200 }} />
-        <Skeleton variant="rounded" height={300} />
-      </Box>
-    );
-  }
+  if (loading) return <PageLoading variant="detail" />;
 
   if (error || !payment) {
     return (
       <Box>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()} sx={{ mb: 2 }}>Back</Button>
         <Alert severity="error">{error || 'Payment not found'}</Alert>
       </Box>
     );
@@ -155,7 +138,6 @@ export default function PaymentDetailPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()}>Back</Button>
         <Typography variant="h5">Payment Details</Typography>
         <Chip label={payment.status} color={statusColor[payment.status] || 'default'} sx={{ ml: 1 }} />
       </Box>
@@ -174,10 +156,15 @@ export default function PaymentDetailPage() {
                 {payment.verified_at && (
                   <Typography variant="body2">Verified: <strong>{format(new Date(payment.verified_at), 'dd MMM yyyy, hh:mm a')}</strong></Typography>
                 )}
+                {payment.rejection_reason && (
+                  <Alert severity="error" sx={{ mt: 1 }}>
+                    Rejection Reason: {payment.rejection_reason}
+                  </Alert>
+                )}
                 {payment.notes && <Typography variant="body2">Notes: {payment.notes}</Typography>}
                 {payment.proof_url && (
                   <Typography variant="body2">
-                    Proof: <a href={payment.proof_url} target="_blank" rel="noopener noreferrer">View</a>
+                    Proof: <a href={payment.proof_url} target="_blank" rel="noopener noreferrer">View Attachment</a>
                   </Typography>
                 )}
               </Box>
@@ -215,6 +202,9 @@ export default function PaymentDetailPage() {
         <Card sx={{ mt: 3 }}>
           <CardContent>
             <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>Actions</Typography>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Verifying will deduct {formatCurrency(Number(payment.amount))} from the customer&apos;s outstanding balance. Rejecting will notify the customer with your reason.
+            </Alert>
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Button
                 variant="contained"
@@ -229,7 +219,7 @@ export default function PaymentDetailPage() {
                 variant="outlined"
                 color="error"
                 startIcon={<CancelOutlined />}
-                onClick={handleReject}
+                onClick={() => setRejectDialogOpen(true)}
                 disabled={actionLoading}
               >
                 Reject
@@ -238,6 +228,38 @@ export default function PaymentDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Reject Dialog */}
+      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Reject Payment</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Please provide a reason for rejecting this payment of {formatCurrency(Number(payment?.amount || 0))}. The customer will be notified.
+          </Typography>
+          <TextField
+            fullWidth
+            label="Rejection Reason *"
+            multiline
+            rows={3}
+            value={rejectionReason}
+            onChange={(e) => setRejectionReason(e.target.value)}
+            placeholder="e.g., Invalid reference number, payment not received, duplicate submission..."
+            error={rejectionReason.length > 0 && rejectionReason.length < 3}
+            helperText={rejectionReason.length > 0 && rejectionReason.length < 3 ? 'Minimum 3 characters' : ''}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleReject}
+            disabled={actionLoading || rejectionReason.length < 3}
+          >
+            {actionLoading ? 'Rejecting...' : 'Reject Payment'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -19,7 +19,6 @@ import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
 import { debugLog } from '@/lib/debug-logger';
@@ -73,10 +72,7 @@ export default function StockMovementsPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()}>Back</Button>
-        <Typography variant="h5">Stock Movements</Typography>
-      </Box>
+      <Typography variant="h5" sx={{ mb: 3 }}>Stock Movements</Typography>
 
       <Card>
         <Box sx={{ p: 2, display: 'flex', gap: 2, alignItems: 'center' }}>

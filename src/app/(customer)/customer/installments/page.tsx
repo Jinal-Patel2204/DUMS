@@ -70,7 +70,7 @@ export default function CustomerInstallmentsPage() {
       <Typography variant="h5" sx={{ mb: 3 }}>My Installments ({plans.length})</Typography>
 
       {plans.length === 0 ? (
-        <Card><CardContent><Typography color="text.secondary" textAlign="center">No installment plans.</Typography></CardContent></Card>
+        <Card><CardContent><Typography color="text.secondary" sx={{ textAlign: 'center' }}>No installment plans.</Typography></CardContent></Card>
       ) : (
         plans.map(plan => {
           const progress = plan.total_amount > 0 ? (Number(plan.total_paid) / Number(plan.total_amount)) * 100 : 0;

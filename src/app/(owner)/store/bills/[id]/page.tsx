@@ -18,7 +18,6 @@ import TableRow from '@mui/material/TableRow';
 import Divider from '@mui/material/Divider';
 import Skeleton from '@mui/material/Skeleton';
 import Alert from '@mui/material/Alert';
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import { createClient } from '@/lib/supabase/client';
 import { format } from 'date-fns';
 import type { BillStatus } from '@/types/database';
@@ -90,7 +89,6 @@ export default function BillDetailPage() {
   if (error || !bill) {
     return (
       <Box>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()} sx={{ mb: 2 }}>Back</Button>
         <Alert severity="error">{error || 'Bill not found'}</Alert>
       </Box>
     );
@@ -103,7 +101,6 @@ export default function BillDetailPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-        <Button startIcon={<ArrowBackOutlined />} onClick={() => router.back()}>Back</Button>
         <Typography variant="h5">Bill {bill.bill_number}</Typography>
         <Chip
           label={bill.status.replace('_', ' ')}

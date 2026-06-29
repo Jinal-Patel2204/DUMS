@@ -23,12 +23,16 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Skeleton from '@mui/material/Skeleton';
 import Alert from '@mui/material/Alert';
+import Tooltip from '@mui/material/Tooltip';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
+import ReceiptOutlined from '@mui/icons-material/ReceiptOutlined';
+import FileDownloadOutlined from '@mui/icons-material/FileDownloadOutlined';
 import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
 import { format } from 'date-fns';
+import { exportToCSV, formatCurrencyExport, formatDateExport } from '@/lib/export';
 import type { Bill, BillStatus } from '@/types/database';
 
 interface BillWithCustomer extends Bill {
@@ -37,13 +41,13 @@ interface BillWithCustomer extends Bill {
 
 const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
-const statusColors: Record<BillStatus, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
-  draft: 'default',
-  finalized: 'info',
-  partially_paid: 'warning',
-  paid: 'success',
-  overdue: 'error',
-  cancelled: 'default',
+const statusConfig: Record<BillStatus, { color: 'default' | 'info' | 'success' | 'warning' | 'error'; label: string }> = {
+  draft: { color: 'default', label: 'Draft' },
+  finalized: { color: 'info', label: 'Finalized' },
+  partially_paid: { color: 'warning', label: 'Partial' },
+  paid: { color: 'success', label: 'Paid' },
+  overdue: { color: 'error', label: 'Overdue' },
+  cancelled: { color: 'default', label: 'Cancelled' },
 };
 
 export default function BillsPage() {
@@ -104,43 +108,70 @@ export default function BillsPage() {
   if (loading) {
     return (
       <Box>
-        <Typography variant="h5" sx={{ mb: 3 }}>Bills</Typography>
-        {[1, 2, 3, 4, 5].map((i) => (
-          <Skeleton key={i} variant="rounded" height={50} sx={{ mb: 1 }} />
-        ))}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Skeleton variant="text" width={140} height={32} />
+          <Skeleton variant="rounded" width={130} height={36} />
+        </Box>
+        <Card>
+          <Box sx={{ p: 2 }}><Skeleton variant="rounded" width={320} height={36} /></Box>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} variant="rounded" height={52} sx={{ mx: 2, mb: 1 }} />
+          ))}
+        </Card>
       </Box>
     );
   }
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5">Bills ({total})</Typography>
-        <Button variant="contained" startIcon={<AddOutlined />} onClick={() => router.push('/store/bills/new')}>
-          Create Bill
-        </Button>
+      {/* Page Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>Bills</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            Manage invoices and track billing status
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Tooltip title="Export bills">
+            <Button variant="outlined" size="small" startIcon={<FileDownloadOutlined />} sx={{ borderColor: 'divider', color: 'text.secondary' }} onClick={() => {
+              exportToCSV(filteredBills, [
+                { key: 'bill_number', label: 'Bill Number' },
+                { key: 'customers', label: 'Customer', format: (v) => v?.name || '' },
+                { key: 'total_amount', label: 'Amount', format: (v) => formatCurrencyExport(v) },
+                { key: 'status', label: 'Status' },
+                { key: 'created_at', label: 'Date', format: (v) => formatDateExport(v) },
+              ], `bills-${new Date().toISOString().split('T')[0]}`);
+            }}>
+              Export
+            </Button>
+          </Tooltip>
+          <Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => router.push('/store/bills/new')}>
+            Create Bill
+          </Button>
+        </Box>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       <Card>
-        <Box sx={{ p: 2, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* Filters Bar */}
+        <Box sx={{ p: 2, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', borderBottom: 1, borderColor: 'divider' }}>
           <TextField
-            size="small"
             placeholder="Search by bill number or customer..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             slotProps={{
               input: {
-                startAdornment: <InputAdornment position="start"><SearchOutlined fontSize="small" /></InputAdornment>,
+                startAdornment: <InputAdornment position="start"><SearchOutlined sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment>,
               },
             }}
             sx={{ width: 320 }}
           />
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+          <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>Status</InputLabel>
             <Select value={statusFilter} label="Status" onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}>
-              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="all">All Statuses</MenuItem>
               <MenuItem value="draft">Draft</MenuItem>
               <MenuItem value="finalized">Finalized</MenuItem>
               <MenuItem value="partially_paid">Partially Paid</MenuItem>
@@ -149,13 +180,26 @@ export default function BillsPage() {
               <MenuItem value="cancelled">Cancelled</MenuItem>
             </Select>
           </FormControl>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+            {filteredBills.length} of {total} bill{total !== 1 ? 's' : ''}
+          </Typography>
         </Box>
 
+        {/* Table */}
         {filteredBills.length === 0 ? (
-          <Box sx={{ p: 4, textAlign: 'center' }}>
-            <Typography color="text.secondary">
-              {bills.length === 0 ? 'No bills yet. Create your first bill!' : 'No bills match your filters.'}
+          <Box sx={{ py: 8, textAlign: 'center' }}>
+            <ReceiptOutlined sx={{ fontSize: 48, color: 'text.disabled', mb: 1.5 }} />
+            <Typography variant="subtitle1" color="text.secondary" sx={{ fontWeight: 500 }}>
+              {bills.length === 0 ? 'No bills yet' : 'No bills match your filters'}
             </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
+              {bills.length === 0 ? 'Create your first bill to get started.' : 'Try adjusting your search or filter.'}
+            </Typography>
+            {bills.length === 0 && (
+              <Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => router.push('/store/bills/new')}>
+                Create Bill
+              </Button>
+            )}
           </Box>
         ) : (
           <>
@@ -163,42 +207,46 @@ export default function BillsPage() {
               <Table>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Bill #</TableCell>
+                    <TableCell>Bill Number</TableCell>
                     <TableCell>Customer</TableCell>
                     <TableCell align="right">Amount</TableCell>
                     <TableCell>Status</TableCell>
                     <TableCell>Date</TableCell>
-                    <TableCell align="center">Actions</TableCell>
+                    <TableCell align="center" sx={{ width: 80 }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {filteredBills.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((bill) => (
-                    <TableRow key={bill.id} hover>
+                    <TableRow key={bill.id} hover sx={{ cursor: 'pointer' }} onClick={() => router.push(`/store/bills/${bill.id}`)}>
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{bill.bill_number}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace', fontSize: '0.8125rem' }}>
+                          {bill.bill_number}
+                        </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">{bill.customers?.name}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{bill.customers?.name}</Typography>
                         <Typography variant="caption" color="text.secondary">{bill.customers?.phone}</Typography>
                       </TableCell>
                       <TableCell align="right">
-                        <Typography sx={{ fontWeight: 500 }}>{formatCurrency(Number(bill.total_amount))}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(Number(bill.total_amount))}</Typography>
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={bill.status.replace('_', ' ')}
+                          label={statusConfig[bill.status].label}
                           size="small"
-                          color={statusColors[bill.status]}
-                          variant="outlined"
+                          color={statusConfig[bill.status].color}
+                          variant="filled"
                         />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">{format(new Date(bill.created_at), 'dd MMM yyyy')}</Typography>
+                        <Typography variant="body2" color="text.secondary">{format(new Date(bill.created_at), 'dd MMM yyyy')}</Typography>
                       </TableCell>
-                      <TableCell align="center">
-                        <IconButton size="small" onClick={() => router.push(`/store/bills/${bill.id}`)}>
-                          <VisibilityOutlined fontSize="small" />
-                        </IconButton>
+                      <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                        <Tooltip title="View bill">
+                          <IconButton size="small" onClick={() => router.push(`/store/bills/${bill.id}`)}>
+                            <VisibilityOutlined sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -213,6 +261,7 @@ export default function BillsPage() {
               onPageChange={(_, p) => setPage(p)}
               rowsPerPage={rowsPerPage}
               onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
+              rowsPerPageOptions={[10, 25, 50]}
             />
           </>
         )}
