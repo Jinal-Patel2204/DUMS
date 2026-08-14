@@ -21,8 +21,11 @@ import InputLabel from '@mui/material/InputLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import { customerSchema, type CustomerInput, COUNTRY_CODES } from '@/lib/validations/customer';
-import { createClient } from '@/lib/supabase/client';
-import type { Customer } from '@/types/database';
+import {
+  useGetCustomerQuery,
+  useUpdateCustomerMutation,
+  type CustomerResponse,
+} from '@/store/api/customersApi';
 
 // Parse stored phone like "+919835473322" into { code: "+91", number: "9835473322" }
 function parsePhone(fullPhone: string): { code: string; number: string } {
@@ -31,7 +34,6 @@ function parsePhone(fullPhone: string): { code: string; number: string } {
       return { code: c.code, number: fullPhone.slice(c.code.length) };
     }
   }
-  // Fallback: if starts with + but no match, treat entire thing as number
   if (fullPhone.startsWith('+')) {
     return { code: '+91', number: fullPhone.replace(/\D/g, '').slice(2) };
   }
@@ -43,11 +45,15 @@ export default function CustomerDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const isEdit = searchParams.get('edit') === 'true';
+  const customerId = params.id as string;
 
-  const [customer, setCustomer] = useState<Customer | null>(null);
   const [editing, setEditing] = useState(isEdit);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+
+  // ─── JAVA BACKEND CALLS ─────────────────────────────
+  const { data: customer, isLoading } = useGetCustomerQuery({ id: customerId });
+  const [updateCustomer, { isLoading: saving }] = useUpdateCustomerMutation();
+  // ────────────────────────────────────────────────────
 
   const { register, handleSubmit, control, watch, formState: { errors }, reset } = useForm<CustomerInput>({
     resolver: zodResolver(customerSchema) as any,
@@ -58,66 +64,45 @@ export default function CustomerDetailPage() {
   const selectedCountry = COUNTRY_CODES.find(c => c.code === selectedCode);
   const maxDigits = selectedCountry?.maxDigits ?? 10;
 
+  // Populate form when customer data loads
   useEffect(() => {
-    const fetchCustomer = async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('id', params.id)
-        .single();
-      if (data) {
-        setCustomer(data as Customer);
-        const parsed = parsePhone(data.phone);
-        reset({
-          name: data.name,
-          country_code: parsed.code,
-          phone: parsed.number,
-          email: data.email || '',
-          address: data.address || '',
-          credit_limit: Number(data.credit_limit),
-        });
-      }
-    };
-    fetchCustomer();
-  }, [params.id, reset]);
+    if (customer) {
+      const parsed = parsePhone(customer.phone);
+      reset({
+        name: customer.name,
+        country_code: parsed.code,
+        phone: parsed.number,
+        email: customer.email || '',
+        address: customer.address || '',
+        credit_limit: customer.creditLimit,
+      });
+    }
+  }, [customer, reset]);
 
   const onSubmit = async (data: CustomerInput) => {
-    setLoading(true);
     setError('');
-    const supabase = createClient();
     const fullPhone = `${data.country_code}${data.phone}`;
 
-    const { error: dbError } = await supabase
-      .from('customers')
-      .update({
-        name: data.name,
-        phone: fullPhone,
-        email: data.email || null,
-        address: data.address || null,
-        credit_limit: data.credit_limit,
-      })
-      .eq('id', params.id);
-
-    if (dbError) {
-      setError(dbError.message);
-      setLoading(false);
-      return;
+    try {
+      await updateCustomer({
+        id: customerId,
+        data: {
+          name: data.name,
+          phone: fullPhone,
+          email: data.email || undefined,
+          address: data.address || undefined,
+          creditLimit: data.credit_limit,
+        },
+      }).unwrap();
+      setEditing(false);
+    } catch (err: any) {
+      setError(err?.data?.error || err?.message || 'Failed to update customer');
     }
-    // Refresh customer data
-    const { data: updated } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', params.id)
-      .single();
-    if (updated) setCustomer(updated as Customer);
-    setEditing(false);
-    setLoading(false);
   };
 
   const formatCurrency = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`;
 
-  if (!customer) {
+  if (isLoading || !customer) {
     return <Typography>Loading...</Typography>;
   }
 
@@ -141,21 +126,17 @@ export default function CustomerDetailPage() {
                 <Box sx={{ py: 1 }}>
                   <Typography variant="body2" color="text.secondary">Outstanding Balance</Typography>
                   <Typography variant="h4" color="error.main" sx={{ fontWeight: 700 }}>
-                    {formatCurrency(customer.current_balance)}
+                    {formatCurrency(customer.currentBalance)}
                   </Typography>
                 </Box>
                 <Divider sx={{ my: 1 }} />
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
                   <Typography variant="body2" color="text.secondary">Credit Limit</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 500 }}>{formatCurrency(customer.credit_limit)}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                  <Typography variant="body2" color="text.secondary">Trust Score</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 500 }}>{customer.trust_score}/100</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>{formatCurrency(customer.creditLimit)}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
                   <Typography variant="body2" color="text.secondary">Status</Typography>
-                  <Chip label={customer.is_active ? 'Active' : 'Inactive'} size="small" color={customer.is_active ? 'success' : 'default'} />
+                  <Chip label={customer.isActive ? 'Active' : 'Inactive'} size="small" color={customer.isActive ? 'success' : 'default'} />
                 </Box>
               </CardContent>
             </Card>
@@ -179,11 +160,7 @@ export default function CustomerDetailPage() {
                   </Grid>
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">Member Since</Typography>
-                    <Typography>{new Date(customer.created_at).toLocaleDateString('en-IN')}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6 }}>
-                    <Typography variant="body2" color="text.secondary">Invitation</Typography>
-                    <Typography>{customer.invitation_status || 'Not invited'}</Typography>
+                    <Typography>{new Date(customer.createdAt).toLocaleDateString('en-IN')}</Typography>
                   </Grid>
                 </Grid>
               </CardContent>
@@ -274,8 +251,8 @@ export default function CustomerDetailPage() {
                 </Grid>
               </Grid>
               <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
-                <Button type="submit" variant="contained" disabled={loading}>
-                  {loading ? 'Saving...' : 'Save Changes'}
+                <Button type="submit" variant="contained" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Changes'}
                 </Button>
                 <Button variant="outlined" onClick={() => setEditing(false)}>Cancel</Button>
               </Box>

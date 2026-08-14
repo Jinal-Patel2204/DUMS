@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -21,27 +21,26 @@ import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
-import Skeleton from '@mui/material/Skeleton';
-import Alert from '@mui/material/Alert';
 import Tooltip from '@mui/material/Tooltip';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogActions from '@mui/material/DialogActions';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
+import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import ReceiptOutlined from '@mui/icons-material/ReceiptOutlined';
 import FileDownloadOutlined from '@mui/icons-material/FileDownloadOutlined';
-import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
+import { useGetBillsQuery, useDeleteBillMutation, type BillResponse } from '@/store/api/billsApi';
 import { format } from 'date-fns';
-import { exportToCSV, formatCurrencyExport, formatDateExport } from '@/lib/export';
-import type { Bill, BillStatus } from '@/types/database';
-
-interface BillWithCustomer extends Bill {
-  customers?: { name: string; phone: string };
-}
+import { PageLoading } from '@/components/feedback/PageLoading';
 
 const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
-const statusConfig: Record<BillStatus, { color: 'default' | 'info' | 'success' | 'warning' | 'error'; label: string }> = {
+const statusConfig: Record<string, { color: 'default' | 'info' | 'success' | 'warning' | 'error'; label: string }> = {
   draft: { color: 'default', label: 'Draft' },
   finalized: { color: 'info', label: 'Finalized' },
   partially_paid: { color: 'warning', label: 'Partial' },
@@ -53,78 +52,50 @@ const statusConfig: Record<BillStatus, { color: 'default' | 'info' | 'success' |
 export default function BillsPage() {
   const router = useRouter();
   const currentStore = useAppSelector((s) => s.auth.currentStore);
-  const [bills, setBills] = useState<BillWithCustomer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [total, setTotal] = useState(0);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [billToDelete, setBillToDelete] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!currentStore?.id) return;
-    const fetchBills = async () => {
-      setLoading(true);
-      setError('');
-      const supabase = createClient();
-
-      let query = supabase
-        .from('bills')
-        .select('*, customers!inner(name, phone)', { count: 'exact' })
-        .eq('store_id', currentStore.id)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
-
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter);
-      }
-
-      const { data, error: fetchError, count } = await query;
-
-      if (fetchError) {
-        setError(fetchError.message);
-        setLoading(false);
-        return;
-      }
-      setBills((data as BillWithCustomer[]) || []);
-      setTotal(count || 0);
-      setLoading(false);
-    };
-    fetchBills();
-  }, [currentStore?.id, statusFilter]);
+  // ─── JAVA BACKEND API CALL ───────────────────────────
+  const { data: bills = [], isLoading } = useGetBillsQuery(
+    { storeId: currentStore?.id ?? '' },
+    { skip: !currentStore?.id }
+  );
+  const [deleteBill] = useDeleteBillMutation();
+  // ─────────────────────────────────────────────────────
 
   const filteredBills = useMemo(() => {
-    if (!search) return bills;
-    const q = search.toLowerCase();
-    return bills.filter(
-      (b) =>
-        b.bill_number.toLowerCase().includes(q) ||
-        b.customers?.name.toLowerCase().includes(q) ||
-        b.customers?.phone.includes(q)
-    );
-  }, [bills, search]);
+    let result = bills;
+    if (statusFilter !== 'all') {
+      result = result.filter((b) => b.status === statusFilter);
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter((b) => b.billNumber.toLowerCase().includes(q));
+    }
+    return result;
+  }, [bills, search, statusFilter]);
 
-  if (loading) {
-    return (
-      <Box>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Skeleton variant="text" width={140} height={32} />
-          <Skeleton variant="rounded" width={130} height={36} />
-        </Box>
-        <Card>
-          <Box sx={{ p: 2 }}><Skeleton variant="rounded" width={320} height={36} /></Box>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} variant="rounded" height={52} sx={{ mx: 2, mb: 1 }} />
-          ))}
-        </Card>
-      </Box>
-    );
-  }
+  const handleDelete = (id: string) => {
+    setBillToDelete(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (billToDelete) {
+      await deleteBill({ id: billToDelete });
+    }
+    setDeleteDialogOpen(false);
+    setBillToDelete(null);
+  };
+
+  if (isLoading) return <PageLoading title="Bills" />;
 
   return (
     <Box>
-      {/* Page Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>Bills</Typography>
@@ -132,41 +103,24 @@ export default function BillsPage() {
             Manage invoices and track billing status
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Tooltip title="Export bills">
-            <Button variant="outlined" size="small" startIcon={<FileDownloadOutlined />} sx={{ borderColor: 'divider', color: 'text.secondary' }} onClick={() => {
-              exportToCSV(filteredBills, [
-                { key: 'bill_number', label: 'Bill Number' },
-                { key: 'customers', label: 'Customer', format: (v) => v?.name || '' },
-                { key: 'total_amount', label: 'Amount', format: (v) => formatCurrencyExport(v) },
-                { key: 'status', label: 'Status' },
-                { key: 'created_at', label: 'Date', format: (v) => formatDateExport(v) },
-              ], `bills-${new Date().toISOString().split('T')[0]}`);
-            }}>
-              Export
-            </Button>
-          </Tooltip>
-          <Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => router.push('/store/bills/new')}>
-            Create Bill
-          </Button>
-        </Box>
+        <Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => router.push('/store/bills/new')}>
+          Create Bill
+        </Button>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
       <Card>
-        {/* Filters Bar */}
         <Box sx={{ p: 2, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', borderBottom: 1, borderColor: 'divider' }}>
           <TextField
-            placeholder="Search by bill number or customer..."
+            size="small"
+            placeholder="Search by bill number..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             slotProps={{
               input: {
-                startAdornment: <InputAdornment position="start"><SearchOutlined sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment>,
+                startAdornment: <InputAdornment position="start"><SearchOutlined fontSize="small" /></InputAdornment>,
               },
             }}
-            sx={{ width: 320 }}
+            sx={{ width: 300 }}
           />
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>Status</InputLabel>
@@ -181,11 +135,10 @@ export default function BillsPage() {
             </Select>
           </FormControl>
           <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-            {filteredBills.length} of {total} bill{total !== 1 ? 's' : ''}
+            {filteredBills.length} bill{filteredBills.length !== 1 ? 's' : ''}
           </Typography>
         </Box>
 
-        {/* Table */}
         {filteredBills.length === 0 ? (
           <Box sx={{ py: 8, textAlign: 'center' }}>
             <ReceiptOutlined sx={{ fontSize: 48, color: 'text.disabled', mb: 1.5 }} />
@@ -208,43 +161,51 @@ export default function BillsPage() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Bill Number</TableCell>
-                    <TableCell>Customer</TableCell>
                     <TableCell align="right">Amount</TableCell>
                     <TableCell>Status</TableCell>
-                    <TableCell>Date</TableCell>
-                    <TableCell align="center" sx={{ width: 80 }}>Actions</TableCell>
+                    <TableCell>Due Date</TableCell>
+                    <TableCell>Created</TableCell>
+                    <TableCell align="center">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {filteredBills.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((bill) => (
                     <TableRow key={bill.id} hover sx={{ cursor: 'pointer' }} onClick={() => router.push(`/store/bills/${bill.id}`)}>
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace', fontSize: '0.8125rem' }}>
-                          {bill.bill_number}
+                        <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                          {bill.billNumber}
                         </Typography>
                       </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{bill.customers?.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">{bill.customers?.phone}</Typography>
-                      </TableCell>
                       <TableCell align="right">
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(Number(bill.total_amount))}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(bill.totalAmount)}</Typography>
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={statusConfig[bill.status].label}
+                          label={statusConfig[bill.status]?.label || bill.status}
                           size="small"
-                          color={statusConfig[bill.status].color}
+                          color={statusConfig[bill.status]?.color || 'default'}
                           variant="filled"
                         />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" color="text.secondary">{format(new Date(bill.created_at), 'dd MMM yyyy')}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {bill.dueDate ? format(new Date(bill.dueDate), 'dd MMM yyyy') : '—'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {bill.createdAt ? format(new Date(bill.createdAt), 'dd MMM yyyy') : '—'}
+                        </Typography>
                       </TableCell>
                       <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                        <Tooltip title="View bill">
+                        <Tooltip title="View">
                           <IconButton size="small" onClick={() => router.push(`/store/bills/${bill.id}`)}>
-                            <VisibilityOutlined sx={{ fontSize: 18 }} />
+                            <VisibilityOutlined fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton size="small" color="error" onClick={() => handleDelete(bill.id)}>
+                            <DeleteOutlined fontSize="small" />
                           </IconButton>
                         </Tooltip>
                       </TableCell>
@@ -266,6 +227,20 @@ export default function BillsPage() {
           </>
         )}
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Delete Bill</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete this bill? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button onClick={confirmDelete} color="error" variant="contained">Delete</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

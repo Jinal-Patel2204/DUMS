@@ -18,7 +18,11 @@ import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined';
 import NextLink from 'next/link';
 import { loginSchema, type LoginInput } from '@/lib/validations/auth';
-import { createClient } from '@/lib/supabase/client';
+
+// ─── JAVA BACKEND SE CONNECT ───────────────────────────────────
+// Pehle Supabase use ho raha tha, ab Java backend use hoga
+import { loginUser } from '@/lib/api/auth';
+// ────────────────────────────────────────────────────────────────
 
 function LoginForm() {
   const router = useRouter();
@@ -32,46 +36,42 @@ function LoginForm() {
     resolver: zodResolver(loginSchema) as any,
   });
 
+  /**
+   * LOGIN SUBMIT — Jab user "Sign in" button click kare
+   *
+   * Flow:
+   * 1. Form data lo (email + password)
+   * 2. Java backend ko bhejo (POST /api/auth/login)
+   * 3. Token mile → save karo
+   * 4. Dashboard pe redirect karo
+   */
   const onSubmit = async (data: LoginInput) => {
     setLoading(true);
     setError('');
-    const supabase = createClient();
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
 
-    if (authError) {
-      if (authError.message.includes('Invalid login credentials')) {
-        setError('Invalid email or password. Please check your credentials and try again.');
-      } else {
-        setError(authError.message);
-      }
-      setLoading(false);
-      return;
-    }
+    try {
+      // ─── JAVA BACKEND CALL ─────────────────────────
+      const result = await loginUser({
+        email: data.email,
+        password: data.password,
+      });
+      // result = { token, email, name, role }
+      // Token already localStorage mein save ho gaya (auth.ts mein)
+      // ───────────────────────────────────────────────
 
-    if (redirect && (redirect.startsWith('/store') || redirect.startsWith('/customer'))) {
-      router.push(redirect);
-    } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-
-        if (profile?.role === 'customer') {
-          router.push('/customer/dashboard');
-        } else {
-          router.push('/store/dashboard');
-        }
-      } else {
+      // Redirect based on role
+      if (redirect) {
+        router.push(redirect);
+      } else if (result.role === 'ADMIN') {
         router.push('/store/dashboard');
+      } else {
+        router.push('/customer/dashboard');
       }
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
-    router.refresh();
   };
 
   return (

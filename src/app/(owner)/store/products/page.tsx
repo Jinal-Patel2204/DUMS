@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -17,12 +17,17 @@ import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 import Skeleton from '@mui/material/Skeleton';
 import Tooltip from '@mui/material/Tooltip';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogActions from '@mui/material/DialogActions';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
@@ -30,48 +35,30 @@ import EditOutlined from '@mui/icons-material/EditOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import InventoryOutlined from '@mui/icons-material/InventoryOutlined';
 import FileDownloadOutlined from '@mui/icons-material/FileDownloadOutlined';
-import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
-import { debugLog } from '@/lib/debug-logger';
+import { useGetProductsQuery, useDeleteProductMutation } from '@/store/api/productsApi';
 import { exportToCSV, formatCurrencyExport } from '@/lib/export';
-import type { Product } from '@/types/database';
-
-interface Category { id: string; name: string; }
 
 const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`;
 
 export default function ProductsPage() {
   const router = useRouter();
   const currentStore = useAppSelector((s) => s.auth.currentStore);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
   const [stockFilter, setStockFilter] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!currentStore?.id) return;
-    const fetch = async () => {
-      const supabase = createClient();
-      debugLog('products', 'page_load', 'Products page loaded');
+  // ─── JAVA BACKEND CALL via Redux Query ───────────────
+  const { data: products = [], isLoading, error } = useGetProductsQuery(
+    { storeId: currentStore?.id ?? '' },
+    { skip: !currentStore?.id }
+  );
+  // ─────────────────────────────────────────────────────
 
-      const [prodRes, catRes] = await Promise.all([
-        supabase.from('products').select('*').eq('store_id', currentStore.id).eq('is_deleted', false).order('created_at', { ascending: false }),
-        supabase.from('categories').select('id, name').eq('store_id', currentStore.id).eq('is_deleted', false),
-      ]);
-
-      if (prodRes.error) { setError(prodRes.error.message); debugLog('products', 'fetch_error', prodRes.error.message, 'error'); }
-      else { setProducts((prodRes.data as Product[]) ?? []); debugLog('products', 'fetch_success', `${prodRes.data?.length} products loaded`, 'success'); }
-
-      setCategories((catRes.data as Category[]) ?? []);
-      setLoading(false);
-    };
-    fetch();
-  }, [currentStore?.id]);
+  const [deleteProduct] = useDeleteProductMutation();
 
   const filtered = useMemo(() => {
     let result = products;
@@ -79,31 +66,26 @@ export default function ProductsPage() {
       const q = search.toLowerCase();
       result = result.filter((p) => p.name.toLowerCase().includes(q) || (p.sku && p.sku.toLowerCase().includes(q)));
     }
-    if (categoryFilter) result = result.filter((p) => p.category_id === categoryFilter);
-    if (stockFilter === 'low') result = result.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= p.low_stock_threshold);
-    if (stockFilter === 'out') result = result.filter((p) => p.stock_quantity === 0);
-    if (stockFilter === 'in') result = result.filter((p) => p.stock_quantity > p.low_stock_threshold);
+    if (stockFilter === 'low') result = result.filter((p) => p.stockQuantity > 0 && p.stockQuantity <= p.lowStockThreshold);
+    if (stockFilter === 'out') result = result.filter((p) => p.stockQuantity === 0);
+    if (stockFilter === 'in') result = result.filter((p) => p.stockQuantity > p.lowStockThreshold);
     return result;
-  }, [products, search, categoryFilter, stockFilter]);
+  }, [products, search, stockFilter]);
 
-  const handleDelete = async (productId: string) => {
-    const product = products.find(p => p.id === productId);
-    if (!product) return;
-
-    const confirmed = window.confirm(`Are you sure you want to archive "${product.name}"? This product will no longer appear in lists but existing bills will retain it.`);
-    if (!confirmed) return;
-
-    const supabase = createClient();
-    const { error } = await supabase.from('products').update({ is_deleted: true }).eq('id', productId);
-    if (error) {
-      debugLog('products', 'delete_error', error.message, 'error');
-      return;
-    }
-    setProducts((prev) => prev.filter((p) => p.id !== productId));
-    debugLog('products', 'delete', `Product "${product.name}" archived`, 'warn');
+  const handleDelete = (productId: string) => {
+    setProductToDelete(productId);
+    setDeleteDialogOpen(true);
   };
 
-  if (loading) {
+  const confirmDelete = async () => {
+    if (productToDelete) {
+      await deleteProduct({ id: productToDelete });
+    }
+    setDeleteDialogOpen(false);
+    setProductToDelete(null);
+  };
+
+  if (isLoading) {
     return (
       <Box>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -113,7 +95,6 @@ export default function ProductsPage() {
         <Card>
           <Box sx={{ p: 2, display: 'flex', gap: 2 }}>
             <Skeleton variant="rounded" width={250} height={36} />
-            <Skeleton variant="rounded" width={150} height={36} />
             <Skeleton variant="rounded" width={130} height={36} />
           </Box>
           {[1, 2, 3, 4, 5].map((i) => (
@@ -129,7 +110,7 @@ export default function ProductsPage() {
       <Box>
         <Typography variant="h5" sx={{ mb: 2 }}>Products</Typography>
         <Card sx={{ p: 4, textAlign: 'center' }}>
-          <Typography color="error">{error}</Typography>
+          <Typography color="error">Failed to load products. Make sure the backend is running.</Typography>
         </Card>
       </Box>
     );
@@ -148,7 +129,14 @@ export default function ProductsPage() {
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Tooltip title="Export products">
             <Button variant="outlined" size="small" startIcon={<FileDownloadOutlined />} sx={{ borderColor: 'divider', color: 'text.secondary' }} onClick={() => {
-              exportToCSV(filtered, [
+              exportToCSV(filtered.map(p => ({
+                sku: p.sku,
+                name: p.name,
+                purchase_price: p.purchasePrice,
+                selling_price: p.sellingPrice,
+                stock_quantity: p.stockQuantity,
+                is_active: p.isActive,
+              })), [
                 { key: 'sku', label: 'SKU' },
                 { key: 'name', label: 'Product Name' },
                 { key: 'purchase_price', label: 'Purchase Price', format: (v) => formatCurrencyExport(v) },
@@ -176,13 +164,6 @@ export default function ProductsPage() {
             slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchOutlined sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment> } }}
             sx={{ width: 260 }}
           />
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel>Category</InputLabel>
-            <Select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }} label="Category">
-              <MenuItem value="">All Categories</MenuItem>
-              {categories.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
-            </Select>
-          </FormControl>
           <FormControl size="small" sx={{ minWidth: 130 }}>
             <InputLabel>Stock</InputLabel>
             <Select value={stockFilter} onChange={(e) => { setStockFilter(e.target.value); setPage(0); }} label="Stock">
@@ -221,7 +202,6 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableCell>SKU</TableCell>
                     <TableCell>Product</TableCell>
-                    <TableCell>Category</TableCell>
                     <TableCell align="right">Purchase</TableCell>
                     <TableCell align="right">Selling</TableCell>
                     <TableCell align="right">Margin</TableCell>
@@ -232,11 +212,10 @@ export default function ProductsPage() {
                 </TableHead>
                 <TableBody>
                   {filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((p) => {
-                    const effectivePrice = Number(p.selling_price) * (1 - Number(p.discount_percent) / 100);
-                    const profit = effectivePrice - Number(p.purchase_price);
-                    const catName = categories.find((c) => c.id === p.category_id)?.name || '—';
-                    const isLow = p.stock_quantity > 0 && p.stock_quantity <= p.low_stock_threshold;
-                    const isOut = p.stock_quantity === 0;
+                    const effectivePrice = Number(p.sellingPrice) * (1 - Number(p.discountPercent) / 100);
+                    const profit = effectivePrice - Number(p.purchasePrice);
+                    const isLow = p.stockQuantity > 0 && p.stockQuantity <= p.lowStockThreshold;
+                    const isOut = p.stockQuantity === 0;
                     return (
                       <TableRow key={p.id} hover sx={{ cursor: 'pointer' }} onClick={() => router.push(`/store/products/${p.id}`)}>
                         <TableCell>
@@ -247,14 +226,11 @@ export default function ProductsPage() {
                         <TableCell>
                           <Typography variant="body2" sx={{ fontWeight: 500 }}>{p.name}</Typography>
                         </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="text.secondary">{catName}</Typography>
+                        <TableCell align="right">
+                          <Typography variant="body2" color="text.secondary">{fmt(p.purchasePrice)}</Typography>
                         </TableCell>
                         <TableCell align="right">
-                          <Typography variant="body2" color="text.secondary">{fmt(p.purchase_price)}</Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2" sx={{ fontWeight: 500 }}>{fmt(p.selling_price)}</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>{fmt(p.sellingPrice)}</Typography>
                         </TableCell>
                         <TableCell align="right">
                           <Typography variant="body2" sx={{ fontWeight: 600, color: profit >= 0 ? 'success.main' : 'error.main' }}>
@@ -262,15 +238,15 @@ export default function ProductsPage() {
                           </Typography>
                         </TableCell>
                         <TableCell align="center">
-                          <Chip 
-                            label={p.stock_quantity} 
-                            size="small" 
-                            color={isOut ? 'error' : isLow ? 'warning' : 'success'} 
+                          <Chip
+                            label={p.stockQuantity}
+                            size="small"
+                            color={isOut ? 'error' : isLow ? 'warning' : 'success'}
                             variant="filled"
                           />
                         </TableCell>
                         <TableCell>
-                          <Chip label={p.is_active ? 'Active' : 'Inactive'} size="small" color={p.is_active ? 'success' : 'default'} variant="filled" />
+                          <Chip label={p.isActive ? 'Active' : 'Inactive'} size="small" color={p.isActive ? 'success' : 'default'} variant="filled" />
                         </TableCell>
                         <TableCell align="center" onClick={(e) => e.stopPropagation()}>
                           <Tooltip title="View">
@@ -307,6 +283,22 @@ export default function ProductsPage() {
           </>
         )}
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Archive Product</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to archive this product? It will no longer appear in product lists but existing bills will retain it.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button onClick={confirmDelete} color="error" variant="contained">
+            Archive
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

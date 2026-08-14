@@ -1,69 +1,102 @@
 import { baseApi } from './baseApi';
-import type { Bill, BillItem } from '@/types/database';
 
-interface BillWithCustomer extends Bill {
-  customers?: { name: string; phone: string };
-}
-
-interface ListBillsParams {
+export interface BillResponse {
+  id: string;
   storeId: string;
-  page?: number;
-  pageSize?: number;
-  search?: string;
-  status?: string;
+  customerId: string;
+  billNumber: string;
+  status: string;
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  dueDate: string | null;
+  notes: string | null;
+  createdBy: string;
+  finalizedAt: string | null;
+  cancelledAt: string | null;
+  isDeleted: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
-interface ListBillsResponse {
-  data: BillWithCustomer[];
-  total: number;
-}
-
-interface BillDetailResponse extends Bill {
-  customers: { id: string; name: string; phone: string; email: string | null; current_balance: number; credit_limit: number };
-  bill_items: (BillItem & { products: { name: string; unit: string } | null })[];
-  ledger_entries: { id: string; entry_type: string; debit_amount: number; credit_amount: number; balance_after: number; created_at: string }[];
-}
-
-interface CreateBillPayload {
+interface CreateBillData {
   storeId: string;
   customerId: string;
   notes?: string;
+  subtotal: number;
+  discountAmount?: number;
+  taxAmount?: number;
+  totalAmount: number;
   dueDate?: string;
-  items: {
-    product_id: string;
-    description: string;
-    quantity: number;
-    unit_price: number;
-    discount_percent: number;
-  }[];
 }
 
 export const billsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getBills: builder.query<ListBillsResponse, ListBillsParams>({
-      query: ({ storeId, page = 1, pageSize = 20, search, status }) => ({
-        url: `/stores/${storeId}/bills`,
-        params: { page, pageSize, search, status },
-      }),
+    getBills: builder.query<BillResponse[], { storeId: string }>({
+      query: ({ storeId }) => `/bills/store/${storeId}`,
       providesTags: ['Bills'],
     }),
-    getBill: builder.query<BillDetailResponse, { id: string }>({
+
+    getBillsByStatus: builder.query<BillResponse[], { storeId: string; status: string }>({
+      query: ({ storeId, status }) => `/bills/store/${storeId}/status/${status}`,
+      providesTags: ['Bills'],
+    }),
+
+    getBillsByCustomer: builder.query<BillResponse[], { customerId: string }>({
+      query: ({ customerId }) => `/bills/customer/${customerId}`,
+      providesTags: ['Bills'],
+    }),
+
+    getBill: builder.query<BillResponse, { id: string }>({
       query: ({ id }) => `/bills/${id}`,
       providesTags: (_r, _e, { id }) => [{ type: 'Bills', id }],
     }),
-    createBill: builder.mutation<Bill, CreateBillPayload>({
-      query: ({ storeId, ...body }) => ({
-        url: `/stores/${storeId}/bills`,
+
+    createBill: builder.mutation<BillResponse, CreateBillData>({
+      query: (data) => ({
+        url: '/bills',
         method: 'POST',
-        body,
+        body: data,
       }),
-      invalidatesTags: ['Bills', 'Customers'],
+      invalidatesTags: ['Bills'],
+    }),
+
+    updateBill: builder.mutation<BillResponse, { id: string; data: Partial<CreateBillData> }>({
+      query: ({ id, data }) => ({
+        url: `/bills/${id}`,
+        method: 'PUT',
+        body: data,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'Bills', id }, 'Bills'],
+    }),
+
+    updateBillStatus: builder.mutation<BillResponse, { id: string; status: string }>({
+      query: ({ id, status }) => ({
+        url: `/bills/${id}/status`,
+        method: 'PATCH',
+        body: { status },
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'Bills', id }, 'Bills'],
+    }),
+
+    deleteBill: builder.mutation<void, { id: string }>({
+      query: ({ id }) => ({
+        url: `/bills/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Bills'],
     }),
   }),
 });
 
 export const {
   useGetBillsQuery,
+  useGetBillsByStatusQuery,
+  useGetBillsByCustomerQuery,
   useGetBillQuery,
   useCreateBillMutation,
+  useUpdateBillMutation,
+  useUpdateBillStatusMutation,
+  useDeleteBillMutation,
 } = billsApi;

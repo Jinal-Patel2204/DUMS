@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,8 +24,10 @@ import Divider from '@mui/material/Divider';
 import Chip from '@mui/material/Chip';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import { createBillSchema, type CreateBillInput } from '@/lib/validations/bill';
-import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
+import { useGetCustomersQuery } from '@/store/api/customersApi';
+import { useGetProductsQuery } from '@/store/api/productsApi';
+import { useCreateBillMutation } from '@/store/api/billsApi';
 import type { Customer, Product } from '@/types/database';
 
 const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`;
@@ -36,10 +38,22 @@ export default function CreateBillPage() {
   const authLoading = useAppSelector((s) => s.auth.isLoading);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [productsLoading, setProductsLoading] = useState(true);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+
+  // ─── JAVA BACKEND API CALLS ────────────────────────────
+  const { data: customersData } = useGetCustomersQuery(
+    { storeId: currentStore?.id ?? '', pageSize: 100 },
+    { skip: !currentStore?.id }
+  );
+  const { data: productsData, isLoading: productsLoading } = useGetProductsQuery(
+    { storeId: currentStore?.id ?? '' },
+    { skip: !currentStore?.id }
+  );
+  const [createBillApi] = useCreateBillMutation();
+  // ───────────────────────────────────────────────────────
+
+  const customers = customersData?.data ?? [];
+  const products = productsData ?? [];
 
   const { register, handleSubmit, control, setValue, watch, formState: { errors } } = useForm<CreateBillInput>({
     resolver: zodResolver(createBillSchema) as any,
@@ -49,58 +63,13 @@ export default function CreateBillPage() {
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
   const watchItems = watch('items');
 
-  // Fetch customers
-  useEffect(() => {
-    if (!currentStore?.id) return;
-    const supabase = createClient();
-    const fetchCustomers = async () => {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('store_id', currentStore.id)
-        .eq('is_deleted', false)
-        .eq('is_active', true)
-        .order('name');
-      if (error) {
-        console.error('Customers fetch error:', error.message);
-      }
-      setCustomers((data as Customer[]) || []);
-    };
-    fetchCustomers();
-  }, [currentStore?.id]);
-
-  // Fetch products
-  useEffect(() => {
-    if (!currentStore?.id) return;
-    const supabase = createClient();
-    const fetchProducts = async () => {
-      setProductsLoading(true);
-      // First check: how many products exist for this store
-      const { data, error, count } = await supabase
-        .from('products')
-        .select('*', { count: 'exact' })
-        .eq('store_id', currentStore.id)
-        .eq('is_deleted', false)
-        .eq('is_active', true)
-        .order('name');
-      if (error) {
-        console.error('Products fetch error:', error.message, error);
-      } else {
-        console.log('Products fetched:', data?.length, 'for store:', currentStore.id);
-      }
-      setProducts((data as Product[]) || []);
-      setProductsLoading(false);
-    };
-    fetchProducts();
-  }, [currentStore?.id]);
-
-  const addProduct = (product: Product) => {
+  const addProduct = (product: any) => {
     append({
       product_id: product.id,
       description: product.name,
       quantity: 1,
-      unit_price: Number(product.selling_price),
-      discount_percent: Number(product.discount_percent),
+      unit_price: Number(product.sellingPrice),
+      discount_percent: Number(product.discountPercent),
     });
   };
 
@@ -118,27 +87,19 @@ export default function CreateBillPage() {
     setError('');
 
     try {
-      const res = await fetch(`/api/stores/${currentStore.id}/bills`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: data.customer_id,
-          notes: data.notes,
-          dueDate: data.due_date,
-          items: data.items,
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        setError(errData.error || 'Failed to create bill');
-        setSubmitting(false);
-        return;
-      }
+      await createBillApi({
+        storeId: currentStore.id,
+        customerId: data.customer_id,
+        notes: data.notes || undefined,
+        dueDate: data.due_date || undefined,
+        subtotal: subtotal,
+        discountAmount: totalDiscount,
+        totalAmount: grandTotal,
+      }).unwrap();
 
       router.push('/store/bills');
-    } catch {
-      setError('Network error. Please try again.');
+    } catch (err: any) {
+      setError(err?.data?.error || 'Failed to create bill');
       setSubmitting(false);
     }
   };
@@ -160,7 +121,7 @@ export default function CreateBillPage() {
             <Typography variant="h6" sx={{ mb: 2 }}>Customer</Typography>
             <Autocomplete
               options={customers}
-              getOptionLabel={(c) => `${c.name} (${c.phone})`}
+              getOptionLabel={(c: any) => `${c.name} (${c.phone})`}
               value={selectedCustomer}
               onChange={(_, customer) => {
                 setSelectedCustomer(customer);
@@ -169,7 +130,7 @@ export default function CreateBillPage() {
               filterOptions={(options, { inputValue }) => {
                 if (!inputValue) return options;
                 const q = inputValue.toLowerCase();
-                return options.filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(q));
+                return options.filter((c: any) => c.name.toLowerCase().includes(q) || c.phone.includes(q));
               }}
               renderInput={(params) => (
                 <TextField
@@ -180,7 +141,7 @@ export default function CreateBillPage() {
                   placeholder="Type name or phone..."
                 />
               )}
-              renderOption={(props, option) => (
+              renderOption={(props, option: any) => (
                 <li {...props} key={option.id}>
                   <Box>
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>{option.name}</Typography>
@@ -192,8 +153,8 @@ export default function CreateBillPage() {
 
             {selectedCustomer && (
               <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <Chip label={`Balance: ${formatCurrency(Number(selectedCustomer.current_balance))}`} color={Number(selectedCustomer.current_balance) > 0 ? 'error' : 'success'} variant="outlined" />
-                <Chip label={`Credit Limit: ${formatCurrency(Number(selectedCustomer.credit_limit))}`} variant="outlined" />
+                <Chip label={`Balance: ${formatCurrency(Number(selectedCustomer.currentBalance || 0))}`} color={Number(selectedCustomer.currentBalance || 0) > 0 ? 'error' : 'success'} variant="outlined" />
+                <Chip label={`Credit Limit: ${formatCurrency(Number(selectedCustomer.creditLimit || 0))}`} variant="outlined" />
                 <Chip label={selectedCustomer.phone} variant="outlined" />
               </Box>
             )}
@@ -206,7 +167,7 @@ export default function CreateBillPage() {
             <Typography variant="h6" sx={{ mb: 2 }}>Products</Typography>
             <Autocomplete
               options={products}
-              getOptionLabel={(p) => `${p.name} - ${formatCurrency(Number(p.selling_price))}/${p.unit}`}
+              getOptionLabel={(p: any) => `${p.name} - ${formatCurrency(Number(p.sellingPrice))}/${p.unit || 'pcs'}`}
               onChange={(_, product) => {
                 if (product) addProduct(product);
               }}
@@ -216,19 +177,19 @@ export default function CreateBillPage() {
               filterOptions={(options, { inputValue }) => {
                 if (!inputValue) return options;
                 const q = inputValue.toLowerCase();
-                return options.filter((p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
+                return options.filter((p: any) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
               }}
               renderInput={(params) => (
                 <TextField {...params} label="Search & Add Product" placeholder="Type product name or SKU..." />
               )}
-              renderOption={(props, option) => (
+              renderOption={(props, option: any) => (
                 <li {...props} key={option.id}>
                   <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}>
                     <Box>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>{option.name}</Typography>
-                      <Typography variant="caption" color="text.secondary">{option.sku || 'No SKU'} • Stock: {option.stock_quantity} {option.unit}</Typography>
+                      <Typography variant="caption" color="text.secondary">{option.sku || 'No SKU'} • Stock: {option.stockQuantity} {option.unit || 'pcs'}</Typography>
                     </Box>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{formatCurrency(Number(option.selling_price))}</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{formatCurrency(Number(option.sellingPrice))}</Typography>
                   </Box>
                 </li>
               )}

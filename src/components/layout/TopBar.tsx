@@ -18,9 +18,9 @@ import LogoutOutlined from '@mui/icons-material/LogoutOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
 import { useNotifications } from '@/hooks/useNotifications';
+import { logoutUser } from '@/lib/api/auth';
 
 interface TopBarProps {
   onMenuClick: () => void;
@@ -63,8 +63,7 @@ export function TopBar({ onMenuClick }: TopBarProps) {
 
   const handleLogout = async () => {
     setAnchorEl(null);
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    logoutUser();  // localStorage + cookie clear
     router.push('/login');
     router.refresh();
   };

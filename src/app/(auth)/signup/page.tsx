@@ -22,7 +22,10 @@ import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined';
 import NextLink from 'next/link';
 import { signupSchema, type SignupInput } from '@/lib/validations/auth';
-import { createClient } from '@/lib/supabase/client';
+
+// ─── JAVA BACKEND SE CONNECT ───────────────────────────────────
+import { registerUser } from '@/lib/api/auth';
+// ────────────────────────────────────────────────────────────────
 
 function getPasswordStrength(password: string): { score: number; label: string; color: string } {
   let score = 0;
@@ -56,22 +59,24 @@ export default function SignupPage() {
   const onSubmit = async (data: SignupInput) => {
     setLoading(true);
     setError('');
-    const supabase = createClient();
-    const { error: authError } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
-      options: {
-        data: { full_name: data.full_name, phone: data.phone, role: 'store_owner' },
-      },
-    });
 
-    if (authError) {
-      setError(authError.message);
+    try {
+      // ─── JAVA BACKEND CALL ─────────────────────────
+      await registerUser({
+        name: data.full_name,
+        email: data.email,
+        password: data.password,
+        phone: data.phone,
+      });
+      // Token automatically localStorage mein save ho jaata hai
+      // ───────────────────────────────────────────────
+
+      router.push('/store/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Registration failed. Please try again.');
+    } finally {
       setLoading(false);
-      return;
     }
-    router.push('/store/dashboard');
-    router.refresh();
   };
 
   return (

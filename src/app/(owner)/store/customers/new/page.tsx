@@ -18,14 +18,14 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import { customerSchema, type CustomerInput, COUNTRY_CODES } from '@/lib/validations/customer';
-import { createClient } from '@/lib/supabase/client';
+import { useCreateCustomerMutation } from '@/store/api/customersApi';
 import { useAppSelector } from '@/store/hooks';
 
 export default function NewCustomerPage() {
   const router = useRouter();
   const currentStore = useAppSelector((s) => s.auth.currentStore);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [createCustomer, { isLoading: loading }] = useCreateCustomerMutation();
 
   const { register, handleSubmit, control, watch, formState: { errors } } = useForm<CustomerInput>({
     resolver: zodResolver(customerSchema) as any,
@@ -41,31 +41,29 @@ export default function NewCustomerPage() {
       setError('No store found. Please refresh and try again.');
       return;
     }
-    setLoading(true);
     setError('');
 
-    const supabase = createClient();
     const fullPhone = `${data.country_code}${data.phone}`;
-    
-    const { error: dbError } = await supabase.from('customers').insert({
-      store_id: currentStore.id,
-      name: data.name,
-      phone: fullPhone,
-      email: data.email || null,
-      address: data.address || null,
-      credit_limit: data.credit_limit,
-    });
 
-    if (dbError) {
-      if (dbError.message.includes('idx_customers_phone_store')) {
+    try {
+      await createCustomer({
+        storeId: currentStore.id,
+        name: data.name,
+        phone: fullPhone,
+        email: data.email || undefined,
+        address: data.address || undefined,
+        creditLimit: data.credit_limit,
+      }).unwrap();
+
+      router.push('/store/customers');
+    } catch (err: any) {
+      const message = err?.data?.error || err?.message || 'Failed to create customer';
+      if (message.includes('phone already exists')) {
         setError('A customer with this phone number already exists.');
       } else {
-        setError(dbError.message);
+        setError(message);
       }
-      setLoading(false);
-      return;
     }
-    router.push('/store/customers');
   };
 
   return (

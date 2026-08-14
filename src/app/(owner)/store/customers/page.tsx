@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -20,65 +20,85 @@ import IconButton from '@mui/material/IconButton';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Tooltip from '@mui/material/Tooltip';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogActions from '@mui/material/DialogActions';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
+import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import DownloadOutlined from '@mui/icons-material/DownloadOutlined';
-import { createClient } from '@/lib/supabase/client';
 import { useAppSelector } from '@/store/hooks';
+import { useGetCustomersQuery, useDeleteCustomerMutation, type CustomerResponse } from '@/store/api/customersApi';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableTableCell } from '@/components/data-display/SortableTableCell';
 import { PageLoading } from '@/components/feedback/PageLoading';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { exportToCSV, formatCurrencyExport } from '@/lib/export';
-import type { Customer } from '@/types/database';
 
 const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
 export default function CustomersPage() {
   const router = useRouter();
   const currentStore = useAppSelector((s) => s.auth.currentStore);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState(0);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  useEffect(() => {
-    if (!currentStore?.id) return;
-    const fetchCustomers = async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('store_id', currentStore.id)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
+  // ─── JAVA BACKEND CALL via Redux Query ───────────────
+  const { data, isLoading } = useGetCustomersQuery(
+    {
+      storeId: currentStore?.id ?? '',
+      page,
+      pageSize: rowsPerPage,
+      search: search || undefined,
+    },
+    { skip: !currentStore?.id }
+  );
+  // ─────────────────────────────────────────────────────
 
-      setCustomers((data as Customer[]) ?? []);
-      setLoading(false);
-    };
-    fetchCustomers();
-  }, [currentStore?.id]);
+  const [deleteCustomer] = useDeleteCustomerMutation();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<string | null>(null);
+  const customers = data?.data ?? [];
+  const totalCount = data?.total ?? 0;
+
+  const handleDelete = (id: string) => {
+    setCustomerToDelete(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (customerToDelete) {
+      await deleteCustomer({ id: customerToDelete });
+    }
+    setDeleteDialogOpen(false);
+    setCustomerToDelete(null);
+  };
 
   const filteredCustomers = useMemo(() => {
     let result = customers;
-    if (tab === 1) result = result.filter((c) => c.is_active);
-    if (tab === 2) result = result.filter((c) => !c.is_active);
-    if (tab === 3) result = result.filter((c) => c.current_balance > 0);
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(q) || c.email?.toLowerCase().includes(q));
-    }
+    if (tab === 1) result = result.filter((c) => c.isActive);
+    if (tab === 2) result = result.filter((c) => !c.isActive);
+    if (tab === 3) result = result.filter((c) => c.currentBalance > 0);
     return result;
-  }, [customers, search, tab]);
+  }, [customers, tab]);
 
   const { sortedData, handleSort, getSortDirection } = useTableSort(filteredCustomers, 'name', 'asc');
 
   const handleExport = () => {
-    exportToCSV(filteredCustomers, [
+    exportToCSV(filteredCustomers.map(c => ({
+      name: c.name,
+      phone: c.phone,
+      email: c.email || '',
+      current_balance: c.currentBalance,
+      credit_limit: c.creditLimit,
+      is_active: c.isActive,
+    })), [
       { key: 'name', label: 'Name' },
       { key: 'phone', label: 'Phone' },
       { key: 'email', label: 'Email' },
@@ -88,12 +108,12 @@ export default function CustomersPage() {
     ], `customers-${new Date().toISOString().split('T')[0]}`);
   };
 
-  if (loading) return <PageLoading title="Customers" />;
+  if (isLoading) return <PageLoading title="Customers" />;
 
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 1 }}>
-        <Typography variant="h5">Customers ({customers.length})</Typography>
+        <Typography variant="h5">Customers ({totalCount})</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           {customers.length > 0 && (
             <Tooltip title="Export to CSV">
@@ -111,10 +131,10 @@ export default function CustomersPage() {
       <Card>
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={tab} onChange={(_, v) => { setTab(v); setPage(0); }}>
-            <Tab label={`All (${customers.length})`} />
-            <Tab label={`Active (${customers.filter(c => c.is_active).length})`} />
-            <Tab label={`Inactive (${customers.filter(c => !c.is_active).length})`} />
-            <Tab label={`Has Balance (${customers.filter(c => c.current_balance > 0).length})`} />
+            <Tab label={`All (${totalCount})`} />
+            <Tab label="Active" />
+            <Tab label="Inactive" />
+            <Tab label="Has Balance" />
           </Tabs>
         </Box>
 
@@ -135,10 +155,10 @@ export default function CustomersPage() {
 
         {sortedData.length === 0 ? (
           <EmptyState
-            title={customers.length === 0 ? 'No customers yet' : 'No customers match your search'}
-            description={customers.length === 0 ? 'Add your first customer to get started with credit management.' : 'Try adjusting your filters or search terms.'}
-            actionLabel={customers.length === 0 ? 'Add Customer' : undefined}
-            onAction={customers.length === 0 ? () => router.push('/store/customers/new') : undefined}
+            title={totalCount === 0 ? 'No customers yet' : 'No customers match your search'}
+            description={totalCount === 0 ? 'Add your first customer to get started with credit management.' : 'Try adjusting your filters or search terms.'}
+            actionLabel={totalCount === 0 ? 'Add Customer' : undefined}
+            onAction={totalCount === 0 ? () => router.push('/store/customers/new') : undefined}
           />
         ) : (
           <>
@@ -148,14 +168,14 @@ export default function CustomersPage() {
                   <TableRow>
                     <SortableTableCell field="name" label="Name" sortDirection={getSortDirection('name')} onSort={handleSort} />
                     <TableCell>Phone</TableCell>
-                    <SortableTableCell field="current_balance" label="Balance" sortDirection={getSortDirection('current_balance')} onSort={handleSort} align="right" />
-                    <SortableTableCell field="credit_limit" label="Credit Limit" sortDirection={getSortDirection('credit_limit')} onSort={handleSort} align="right" />
+                    <SortableTableCell field="currentBalance" label="Balance" sortDirection={getSortDirection('currentBalance')} onSort={handleSort} align="right" />
+                    <SortableTableCell field="creditLimit" label="Credit Limit" sortDirection={getSortDirection('creditLimit')} onSort={handleSort} align="right" />
                     <TableCell>Status</TableCell>
                     <TableCell align="center">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {sortedData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((customer) => (
+                  {sortedData.map((customer) => (
                     <TableRow key={customer.id} hover sx={{ cursor: 'pointer' }} onClick={() => router.push(`/store/customers/${customer.id}`)}>
                       <TableCell>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>{customer.name}</Typography>
@@ -163,16 +183,16 @@ export default function CustomersPage() {
                       </TableCell>
                       <TableCell>{customer.phone}</TableCell>
                       <TableCell align="right">
-                        <Typography color={Number(customer.current_balance) > 0 ? 'error.main' : 'success.main'} sx={{ fontWeight: 500 }}>
-                          {formatCurrency(Number(customer.current_balance))}
+                        <Typography color={customer.currentBalance > 0 ? 'error.main' : 'success.main'} sx={{ fontWeight: 500 }}>
+                          {formatCurrency(customer.currentBalance)}
                         </Typography>
                       </TableCell>
-                      <TableCell align="right">{formatCurrency(Number(customer.credit_limit))}</TableCell>
+                      <TableCell align="right">{formatCurrency(customer.creditLimit)}</TableCell>
                       <TableCell>
                         <Chip
-                          label={customer.is_active ? 'Active' : 'Inactive'}
+                          label={customer.isActive ? 'Active' : 'Inactive'}
                           size="small"
-                          color={customer.is_active ? 'success' : 'default'}
+                          color={customer.isActive ? 'success' : 'default'}
                           variant="outlined"
                         />
                       </TableCell>
@@ -187,6 +207,11 @@ export default function CustomersPage() {
                             <EditOutlined fontSize="small" />
                           </IconButton>
                         </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton size="small" color="error" onClick={() => handleDelete(customer.id)}>
+                            <DeleteOutlined fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -196,7 +221,7 @@ export default function CustomersPage() {
 
             <TablePagination
               component="div"
-              count={sortedData.length}
+              count={totalCount}
               page={page}
               onPageChange={(_, p) => setPage(p)}
               rowsPerPage={rowsPerPage}
@@ -206,6 +231,22 @@ export default function CustomersPage() {
           </>
         )}
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Delete Customer</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete this customer? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button onClick={confirmDelete} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
