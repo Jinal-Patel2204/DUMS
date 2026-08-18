@@ -1,73 +1,72 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Typography from '@mui/material/Typography';
-import Chip from '@mui/material/Chip';
-import Grid from '@mui/material/Grid';
-import Skeleton from '@mui/material/Skeleton';
-import Alert from '@mui/material/Alert';
-import Button from '@mui/material/Button';
+import CheckOutlined from '@mui/icons-material/CheckOutlined';
+import CloseOutlined from '@mui/icons-material/CloseOutlined';
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import { useGetPaymentQuery, useUpdatePaymentStatusMutation } from '@/store/api/paymentsApi';
+import { useGetCustomersQuery } from '@/store/api/customersApi';
+import { useAppSelector } from '@/store/hooks';
+import { DetailShell } from '@/components/layout/DetailShell';
 import { format } from 'date-fns';
+import Typography from '@mui/material/Typography';
 
-const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`;
-const statusColor: Record<string, 'warning' | 'success' | 'error' | 'default'> = {
-  pending: 'warning', verified: 'success', rejected: 'error',
+const fmt = (n: number) => `₹ ${Number(n).toLocaleString('en-IN')}`;
+
+const statusConfig: Record<string, { color: 'warning' | 'success' | 'error' | 'default'; label: string }> = {
+  pending: { color: 'warning', label: 'Pending' },
+  verified: { color: 'success', label: 'Verified' },
+  rejected: { color: 'error', label: 'Rejected' },
 };
 
 export default function PaymentDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const currentStore = useAppSelector((s) => s.auth.currentStore);
   const { data: payment, isLoading, error } = useGetPaymentQuery({ id }, { skip: !id });
   const [updateStatus, { isLoading: updating }] = useUpdatePaymentStatusMutation();
 
-  if (isLoading) return <Box><Skeleton variant="rounded" height={40} sx={{ mb: 2, width: 200 }} /><Skeleton variant="rounded" height={250} /></Box>;
-  if (error || !payment) return <Alert severity="error">Payment not found</Alert>;
+  const { data: customersData } = useGetCustomersQuery(
+    { storeId: currentStore?.id ?? '' },
+    { skip: !currentStore?.id }
+  );
+
+  const customerName = useMemo(() => {
+    if (!payment || !customersData?.data) return 'Unknown';
+    return customersData.data.find(c => c.id === payment.customerId)?.name || 'Unknown';
+  }, [payment, customersData]);
+
+  const refId = payment?.referenceId || `PYM-${(payment?.id || '').slice(0, 8).toUpperCase()}`;
+  const status = statusConfig[payment?.status || ''] || { color: 'default' as const, label: payment?.status || '' };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5">Payment Details</Typography>
-        <Chip label={payment.status} color={statusColor[payment.status] || 'default'} sx={{ textTransform: 'capitalize' }} />
-      </Box>
-
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>Payment Info</Typography>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}><Typography variant="body2" color="text.secondary">Amount</Typography><Typography variant="h6" sx={{ fontWeight: 700 }}>{fmt(payment.amount)}</Typography></Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}><Typography variant="body2" color="text.secondary">Method</Typography><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{payment.method.replace('_', ' ')}</Typography></Box>
-              {payment.referenceId && <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}><Typography variant="body2" color="text.secondary">Reference ID</Typography><Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{payment.referenceId}</Typography></Box>}
-              {payment.notes && <Box sx={{ mt: 1 }}><Typography variant="body2" color="text.secondary">Notes</Typography><Typography variant="body2">{payment.notes}</Typography></Box>}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>Timeline</Typography>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}><Typography variant="body2" color="text.secondary">Created</Typography><Typography variant="body2">{payment.createdAt ? format(new Date(payment.createdAt), 'dd MMM yyyy, hh:mm a') : '—'}</Typography></Box>
-              {payment.verifiedAt && <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}><Typography variant="body2" color="text.secondary">Verified</Typography><Typography variant="body2">{format(new Date(payment.verifiedAt), 'dd MMM yyyy, hh:mm a')}</Typography></Box>}
-              {payment.rejectionReason && <Box sx={{ mt: 1 }}><Typography variant="body2" color="text.secondary">Rejection Reason</Typography><Typography variant="body2" color="error.main">{payment.rejectionReason}</Typography></Box>}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {payment.status === 'pending' && (
-        <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
-          <Button variant="contained" color="success" disabled={updating} onClick={() => updateStatus({ id, status: 'verified' })}>
-            Verify Payment
-          </Button>
-          <Button variant="outlined" color="error" disabled={updating} onClick={() => updateStatus({ id, status: 'rejected' })}>
-            Reject Payment
-          </Button>
-        </Box>
-      )}
-    </Box>
+    <DetailShell
+      pageTitle="Payment Details"
+      heading={`Payment Review: #${refId}`}
+      isLoading={isLoading}
+      error={error ? 'Payment not found' : null}
+      status={status}
+      actions={payment?.status === 'pending' ? [
+        { label: 'Verify Payment', icon: <CheckOutlined sx={{ fontSize: 16 }} />, onClick: () => updateStatus({ id, status: 'verified' }), color: 'success', disabled: updating },
+        { label: 'Reject Payment', icon: <CloseOutlined sx={{ fontSize: 16 }} />, onClick: () => updateStatus({ id, status: 'rejected' }), color: 'error', variant: 'outlined', disabled: updating },
+      ] : []}
+      leftFields={payment ? [
+        { label: 'Amount', value: fmt(payment.amount), large: true },
+        { label: 'Method', value: payment.method.replace('_', ' ').toUpperCase() },
+        { label: 'Payer', value: customerName, icon: <PersonOutlined sx={{ fontSize: 18, color: 'text.secondary' }} /> },
+      ] : []}
+      rightFields={payment ? [
+        { label: 'Payment Date', value: payment.createdAt ? format(new Date(payment.createdAt), 'dd MMM yyyy, hh:mm a') : '—' },
+        { label: 'Transaction ID', value: refId, mono: true },
+        { label: 'App-ID', value: 'DUMS-WEB-1.2', mono: true },
+      ] : []}
+      extraSections={payment && (payment.notes || payment.rejectionReason || payment.verifiedAt) ? [{
+        fields: [
+          ...(payment.verifiedAt ? [{ label: 'Verified At', value: format(new Date(payment.verifiedAt), 'dd MMM yyyy, hh:mm a') }] : []),
+          ...(payment.rejectionReason ? [{ label: 'Rejection Reason', value: <Typography variant="body2" color="error.main" sx={{ fontWeight: 500 }}>{payment.rejectionReason}</Typography> }] : []),
+          ...(payment.notes ? [{ label: 'Notes', value: payment.notes }] : []),
+        ],
+      }] : []}
+    />
   );
 }

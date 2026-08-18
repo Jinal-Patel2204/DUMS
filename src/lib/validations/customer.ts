@@ -15,6 +15,15 @@ export const COUNTRY_CODES = [
   { code: '+94', country: 'Sri Lanka', maxDigits: 9 },
 ];
 
+export const PRICE_LEVELS = [
+  { value: 'retail', label: 'Retail' },
+  { value: 'wholesale', label: 'Wholesale' },
+  { value: 'vip', label: 'VIP' },
+  { value: 'distributor', label: 'Distributor' },
+] as const;
+
+export type PriceLevel = typeof PRICE_LEVELS[number]['value'];
+
 export const customerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   country_code: z.string().default('+91'),
@@ -28,6 +37,7 @@ export const customerSchema = z.object({
     (val) => (val === '' ? 0 : Number(val)),
     z.number().min(0, 'Credit limit must be >= 0')
   ),
+  price_level: z.enum(['retail', 'wholesale', 'vip', 'distributor']).default('retail'),
 });
 
 export type CustomerInput = z.infer<typeof customerSchema>;

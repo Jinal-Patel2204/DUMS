@@ -20,11 +20,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           sx={{ 
             flex: 1, 
             overflowY: 'auto',
-            px: { xs: 2, sm: 3, md: 4 }, 
-            py: 3,
+            px: { xs: 1.5, sm: 2, md: 3 }, 
+            py: 2,
           }}
         >
-          <Box sx={{ maxWidth: '1400px', width: '100%', mx: 'auto' }}>
+          <Box sx={{ width: '100%' }}>
             {children}
           </Box>
         </Box>

@@ -14,6 +14,7 @@ export interface CustomerResponse {
   storeId: string;
   currentBalance: number;
   creditLimit: number;
+  priceLevel: string | null;
   trustScore: number;
   invitationStatus: string | null;
   isActive: boolean;
@@ -41,6 +42,7 @@ interface CreateCustomerData {
   address?: string;
   storeId: string;
   creditLimit?: number;
+  priceLevel?: string;
 }
 
 export const customersApi = baseApi.injectEndpoints({
